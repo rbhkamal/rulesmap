@@ -1,112 +1,82 @@
-/*
-Copyright 2019 Ribhi Kamal - rbhkamal@gmail.com
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights 
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell 
-copies of the Software, and to permit persons to whom the Software is furnished
-to do so, subject to the following conditions: The above copyright notice and 
-this permission notice shall be included in all copies or substantial portions 
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
-INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A 
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
-HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
-CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
-OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
-#ifndef _RECURSIVE_PATH_TRIE_H
-#define _RECURSIVE_PATH_TRIE_H
+//-----------------------------------------------------------------------------
+// Copyright (c) 2021 Ribhi Kamal - rbhkamal@gmail.com
+// 
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+// 
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+//-----------------------------------------------------------------------------
+#pragma once
 
 #include <vector>
 #include <cassert>
 
-template <typename Data_T>
-class PathTrieNode
+template <typename CharT, typename DataT>
+class trie
 {
 public:
-	PathTrieNode() :
-		m_HasData(false)
+	trie() = default;
+
+	template<typename ...ArgsT>
+	trie(ArgsT... args)
+	: mHasData(true)
+	, mData{std::forward<ArgsT>(args)}
 	{};
 
-	PathTrieNode(int && a) :
-		m_HasData(false)
-	{};
-
-	PathTrieNode(const Data_T &aData) :
-		m_HasData(true),
-		m_Data(aData)
-	{};
-
-	PathTrieNode &
-	addChild(const wchar_t &aKey, unsigned int &aSkips)
+	void SetData(const DataT &aData)
 	{
-		PathTrieNode * tNode = NULL;
-
-		// Find a child node if one already exists
-		for (auto &tEntry : m_Nodes)
-		{
-			if (tEntry.key == aKey && tEntry.skips == aSkips)
-			{
-				tNode = &tEntry.node;
-				break;
-			}
-		}
-
-		// Add the child if none already exist
-		if (tNode == NULL)
-		{
-			m_Nodes.emplace_back(aSkips, aKey);
-
-			tNode = &(m_Nodes.back().node);
-		}
-
-		return *tNode;
+		mHasData = true;
+		mData = aData;
 	};
 
-	void SetData(const Data_T &aData)
-	{
-		m_HasData = true;
-		m_Data = aData;
-	};
-
-	void AddPath(const wchar_t *aPath, const Data_T &aData, unsigned int aSkipsAllowed = 0)
+	void Insert(const CharT *aPath, const DataT &aData, unsigned int aSkipsAllowed = 0) noexcept
 	{
 		switch (*aPath)
 		{
 		case '*':
-			AddPath(aPath + 1, aData, -1);
+			Insert(aPath + 1, aData, -1);
 			break;
 		case '?':
-			AddPath(aPath + 1, aData, 1);
+			Insert(aPath + 1, aData, 1);
 			break;
 		
 		default:
-			auto &tNewNode = addChild(*aPath, aSkipsAllowed);
+			auto &tNewNode = AddChild(*aPath, aSkipsAllowed);
 
 			if (*aPath == '\0')
 			{
 				// This means a rule is overrideing data. (Duplicate rule)
-				assert(!tNewNode.m_HasData);
+				assert(!tNewNode.mHasData);
 
 				tNewNode.SetData(aData);
 			}
 			else
 			{
-				tNewNode.AddPath(aPath + 1, aData, 0);
+				tNewNode.Insert(aPath + 1, aData, 0);
 			}
 		}
 	};
 
 	
-	bool Match(const wchar_t *aPath, Data_T **aDataPtr, bool aAllowPartialMatch = true)// const
+	bool Match(const CharT *aPath, DataT **aDataPtr, bool aAllowPartialMatch = true) const
 	{
 		bool tMatchFound = false;
-		PathTrieNode * tNullCharNode = NULL;
+		const trie * tNullCharNode = nullptr;
 
-		for (NodeEntry &tEntry : m_Nodes)
+		for (const NodeEntry &tEntry : mNodes)
 		{
 			unsigned int tSkipCount = 0;
 			unsigned int tAllowedSkips = tEntry.skips;
@@ -115,14 +85,14 @@ public:
 				if (tEntry.key == aPath[tSkipCount])
 				{
 					// We found a path. Check if we reached the end of the string
-					if (aPath[tSkipCount] == L'\0')
+					if (aPath[tSkipCount] =='\0')
 					{
-						if (tEntry.node.m_HasData)
+						if (tEntry.node.mHasData)
 						{
-							*aDataPtr = &(tEntry.node.m_Data);
+							*aDataPtr = &(tEntry.node.mData);
 						}
 
-						return tEntry.node.m_HasData;
+						return tEntry.node.mHasData;
 					}
 					else
 					{
@@ -139,15 +109,15 @@ public:
 				// for for locating the null terminator entry (if any) to be
 				// used below. We need to find that entry because it is the one
 				// that contains the data.
-				if (aAllowPartialMatch && tEntry.key == L'\0')
+				if (aAllowPartialMatch && tEntry.key =='\0')
 				{
 					tNullCharNode = &(tEntry.node);
 				}
-			} while (aPath[tSkipCount] != L'\0' &&
+			} while (aPath[tSkipCount] !='\0' &&
 				     ++tSkipCount <= tAllowedSkips);
 		}
 
-		if (aAllowPartialMatch && tNullCharNode && tNullCharNode->m_HasData)
+		if (aAllowPartialMatch && tNullCharNode && tNullCharNode->mHasData)
 		{
 			// If none our children provided an exact match and we currently
 			// have data at the current node, then use it as the fallback match
@@ -156,59 +126,46 @@ public:
 			// if no specific rule for cmd.exe was found.
 
 			// use it as the fallback match
-			*aDataPtr = &(tNullCharNode->m_Data);
+			*aDataPtr = &(tNullCharNode->mData);
 			return true;
 		}
 		
 		return false;
 	};
 
+private:
+
+	trie& AddChild(const CharT &aKey, unsigned int &aSkips) noexcept
+	{
+		// Find a child node if one already exists
+		for (auto &tEntry : mNodes)
+		{
+			if (tEntry.key == aKey && tEntry.skips == aSkips)
+			{
+				return tEntry.node;
+			}
+		}
+
+		// Add the child if none already exist	
+		mNodes.emplace_back(aSkips, aKey);
+
+		return mNodes.back().node;
+	};
+
+
 	struct NodeEntry
 	{
-		NodeEntry(unsigned int aSkips, wchar_t aKey)
+		NodeEntry(unsigned int aSkips, CharT aKey)
 			:	skips(aSkips),
 				key(aKey)
 		{};
 
 		unsigned int skips;
-		wchar_t		 key;
-		PathTrieNode node;
+		CharT		 key;
+		trie node;
 	};
 
-	typedef std::vector<NodeEntry> Nodes;
-
-	bool		m_HasData;
-	Data_T		m_Data;
-	Nodes		m_Nodes;
+	bool		mHasData{false};
+	mutable DataT		mData;
+	std::vector<NodeEntry>	mNodes;
 };
-
-
-template <typename Data_T>
-class PathTrie
-{
-public:
-	PathTrie()
-	{};
-	virtual ~PathTrie()
-	{};
-
-	
-	bool Match(const wchar_t *aPath, Data_T **aDataPtr)
-	{
-		return m_Root.Match(aPath, aDataPtr);
-	};
-	
-
-	void AddPath(const wchar_t *aPath, const Data_T &aData)
-	{
-		return m_Root.AddPath(aPath, aData);
-	};
-
-
-private:
-
-
-	PathTrieNode<Data_T> m_Root;
-};
-
-#endif // _RECURSIVE_PATH_TRIE_H
