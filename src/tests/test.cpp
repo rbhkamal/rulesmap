@@ -195,30 +195,61 @@ int SequentialSearch(
     return -1;
 }
 
-void TestPerformance()
+struct TestRules
 {
-    trie<char, int> rulesTrie;
-    std::vector<std::pair<std::string, int>> rulesVector;
-    std::vector<std::pair<std::regex, int>> rulesAsRegExVector;
+    trie<char, int> trieRules;
+    std::vector<std::pair<std::string, int>> vectorRules;
+    std::vector<std::pair<std::regex, int>> regexRules;
 
-    std::cout << "Generating rules" << std::endl;
-    std::string longPath;
-    for (int i = 0; i < 1000; ++i)
+    void addRule(const std::string& rulePath, int ruleValue)
     {
-        longPath.append("/a");
+        std::string ruleWithWildCard = rulePath + "*ing";
+        std::regex ruleWithRegEx(rulePath + ".*ing");
+
+        trieRules.Insert(ruleWithWildCard.c_str(), ruleValue);
+        vectorRules.emplace_back(ruleWithWildCard, ruleValue);
+        regexRules.emplace_back(std::move(ruleWithRegEx), ruleValue);
     }
 
+    // Trie Tests
+    void doTrie(const std::string& testPath)
+    {
+        int *tOutputRulePtr;
+        trieRules.Match(testPath.c_str(), &tOutputRulePtr);
+    };
+
+    // Wild Card Tests (sample internet solution)
+    void doBasicRecurisveWildcard(const std::string& testPath)
+    {
+        SequentialSearch<std::string>(vectorRules, testPath, std::bind(matchInternetWrapperImpl, std::placeholders::_1, std::placeholders::_2));
+    }
+    
+    // Regex
+    void doRegexTime(const std::string& testPath)
+    {
+        SequentialSearch<std::regex>(regexRules, testPath, std::bind(regexImpl, std::placeholders::_1, std::placeholders::_2));
+    };
+};
+
+/*
+Generates Rules that look like this (rule -> rule id):
+    /a/a/a/a/a/a/a/a/a/a --> 1
+    /a/a/a/a/a/a/a/a/a --> 2
+    /a/a/a/a/a/a/a/a --> 3
+    ....
+    /a/a/a --> 998
+    /a/ ->  999
+*/
+TestRules GenerateRulesFromPathWithChangingLength(const std::string& path)
+{
+    TestRules rules;
+    
     // Rules are stored from most specific (longest) to least specific (shortest)
-    std::string generatedRule = longPath;
+    std::string generatedRule = path;
     int id = 0;
     while (!generatedRule.empty())
     {
-        std::string ruleWithWildCard = generatedRule + "*ing";
-        std::regex ruleWithRegEx(generatedRule + ".*ing");
-
-        rulesTrie.Insert(ruleWithWildCard.c_str(), id);
-        rulesVector.emplace_back(ruleWithWildCard, id);
-        rulesAsRegExVector.emplace_back(std::move(ruleWithRegEx), id);
+        rules.addRule(generatedRule, id);
 
         auto lastSlash = generatedRule.find_last_of('/');
         if(lastSlash != std::string::npos)
@@ -234,19 +265,48 @@ void TestPerformance()
         }
     }
 
-    /*
-     The rules now look like this (rule -> rule id):
-     /a/a/a/a/a/a/a/a/a/a --> 1
-     /a/a/a/a/a/a/a/a/a --> 2
-     /a/a/a/a/a/a/a/a --> 3
-      ....
-     /a/a/a --> 998
-     /a/ ->  999
-    */
+   return rules;
+}
+
+
+/*
+Generates Rules that look like this (rule -> rule id):
+    /a/a/a/a/a/a/a/a/a/a0 --> 0
+    /a/a/a/a/a/a/a/a/a/a1 --> 1
+    /a/a/a/a/a/a/a/a/a/a2 --> 2
+    /a/a/a/a/a/a/a/a/a/a3 --> 3
+    ....
+    /a/a/a/a/a/a/a/a/a/a<rulesCount-1> --> <rulesCount-1>
+*/
+TestRules GenerateRulesFromPathWithDepthPostfix(const std::string& path, int rulesCount )
+{
+    TestRules rules;
+    
+    // Rules are stored from most specific (longest) to least specific (shortest)
+    for (int depth = 0; depth < rulesCount; ++depth)
+    {
+        rules.addRule(path + std::to_string(depth), depth);
+    }
+
+   return rules;
+}
+
+
+void TestPerformanceWithDifferentLengthRulesAndPaths()
+{
+    std::cout << "Generating rules" << std::endl;
+    std::string longPath;
+    
+    for (int i = 0; i < 200; ++i)
+    {
+        longPath.append("/a");
+    }
+
+    TestRules varyingLengthTestRules = GenerateRulesFromPathWithChangingLength(longPath);
+    
      
 
     // Perform lookups
-    
     std::wcout << std::left  << std::setw(20) << "Vector Time (Ms)"
                    << std::left << std::setw(20) << "RegEx Time (Ms)"
                    << std::left << std::setw(20) << "Trie Time (Ms)"
@@ -254,21 +314,11 @@ void TestPerformance()
                    << std::endl;
 
     std::string testPath = longPath + "/testing";
-   
-
-    // Create the functions that we want to test
-    // Trie Tests
-    auto trieTime = [&]{int *tOutputRulePtr; rulesTrie.Match(testPath.c_str(), &tOutputRulePtr); };
-    // Wild Card Tests (sample internet solution)
-    auto internetWildcardTime = [&]{  SequentialSearch<std::string>(rulesVector, testPath, std::bind(matchInternetWrapperImpl, std::placeholders::_1, std::placeholders::_2));};
-    // Regex
-    auto regexTime = [&]{  SequentialSearch<std::regex>(rulesAsRegExVector, testPath, std::bind(regexImpl, std::placeholders::_1, std::placeholders::_2));  };
-
     while (!longPath.empty())
     {
-        std::wcout << std::left  << std::setw(20) << std::chrono::duration <double, std::micro> (TimeIt1k(internetWildcardTime)).count()
-                   << std::left << std::setw(20) << std::chrono::duration <double, std::micro> (TimeIt1k(regexTime)).count()
-                   << std::left << std::setw(20) << std::chrono::duration <double, std::micro> (TimeIt1k(trieTime)).count()
+        std::wcout << std::left  << std::setw(20) << std::chrono::duration <double, std::micro> (TimeIt1k(std::bind(&TestRules::doBasicRecurisveWildcard, varyingLengthTestRules, testPath))).count()
+                   << std::left << std::setw(20) << std::chrono::duration <double, std::micro> (TimeIt1k(std::bind(&TestRules::doRegexTime, varyingLengthTestRules, testPath))).count()
+                   << std::left << std::setw(20) << std::chrono::duration <double, std::micro> (TimeIt1k(std::bind(&TestRules::doTrie, varyingLengthTestRules, testPath))).count()
                    << std::left << std::setw(20) << longPath.size()
                    << std::endl;
 
@@ -287,6 +337,79 @@ void TestPerformance()
     }
 }
 
+void TestPerformanceWithStaticRuleSizeAndPaths()
+{
+    std::cout << "Generating rules" << std::endl;
+    std::string longPath;
+    for (int i = 0; i < 256; ++i)
+    {
+        longPath.append("/a");
+    }
+
+    constexpr int kRulesCount = 1000;
+    TestRules testRules = GenerateRulesFromPathWithDepthPostfix(longPath, kRulesCount);
+    
+     
+
+    // Perform lookups
+    std::wcout << std::left  << std::setw(20) << "Vector Time (Ms)"
+                   << std::left << std::setw(20) << "RegEx Time (Ms)"
+                   << std::left << std::setw(20) << "Trie Time (Ms)"
+                   << std::left << std::setw(20) << "Depth"
+                   << std::endl;
+
+    std::string testPath;
+
+    for (int testDepth = 0; testDepth < kRulesCount; ++testDepth)
+    {
+        testPath = longPath + std::to_string(testDepth) + "/testing";
+
+        std::wcout << std::left  << std::setw(20) << std::chrono::duration <double, std::micro> (TimeIt1k(std::bind(&TestRules::doBasicRecurisveWildcard, testRules, testPath))).count()
+                   << std::left << std::setw(20) << std::chrono::duration <double, std::micro> (TimeIt1k(std::bind(&TestRules::doRegexTime, testRules, testPath))).count()
+                   << std::left << std::setw(20) << std::chrono::duration <double, std::micro> (TimeIt1k(std::bind(&TestRules::doTrie, testRules, testPath))).count()
+                   << std::left << std::setw(20) << testDepth
+                   << std::endl;
+    }
+}
+
+
+void TestPerformanceWithChangingRulesSize()
+{
+    std::cout << "Generating rules" << std::endl;
+    std::string longPath;
+    for (int i = 0; i < 256; ++i)
+    {
+        longPath.append("/a");
+    }
+
+    constexpr int kRulesCount = 1000;
+    
+    
+     
+
+    // Perform lookups
+    std::wcout << std::left  << std::setw(20) << "Vector Time (Ms)"
+                   << std::left << std::setw(20) << "RegEx Time (Ms)"
+                   << std::left << std::setw(20) << "Trie Time (Ms)"
+                   << std::left << std::setw(20) << "Rules Count"
+                   << std::endl;
+
+    // Worst case scenario is tested
+    
+
+    for (int rulesCount = 1; rulesCount <= kRulesCount; ++rulesCount)
+    {
+        TestRules testRules = GenerateRulesFromPathWithDepthPostfix(longPath, rulesCount);
+        std::string testPath = longPath + std::to_string(rulesCount-1) + "/testing";
+
+        std::wcout << std::left  << std::setw(20) << std::chrono::duration <double, std::micro> (TimeIt1k(std::bind(&TestRules::doBasicRecurisveWildcard, testRules, testPath))).count()
+                   << std::left << std::setw(20) << std::chrono::duration <double, std::micro> (TimeIt1k(std::bind(&TestRules::doRegexTime, testRules, testPath))).count()
+                   << std::left << std::setw(20) << std::chrono::duration <double, std::micro> (TimeIt1k(std::bind(&TestRules::doTrie, testRules, testPath))).count()
+                   << std::left << std::setw(20) << rulesCount
+                   << std::endl;
+    }
+}
+
 
 int main()
 {
@@ -294,6 +417,8 @@ int main()
     TestCorrectness();
     std::wcout << "-----------------" << std::endl;
     std::wcout << "Peformance test:" << std::endl;
-    TestPerformance();
+    TestPerformanceWithDifferentLengthRulesAndPaths();
+    TestPerformanceWithStaticRuleSizeAndPaths();
+    TestPerformanceWithChangingRulesSize();
     std::wcout << "-----------------" << std::endl;
 }
